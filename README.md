@@ -1,62 +1,65 @@
 # Compass-EVM
 
-This smart contract is to make possible to run any other smart contract with arbitrary transaction data.
+Bu akıllı sözleşme, keyfi işlem verileriyle başka bir akıllı sözleşmenin yürütülmesini mümkün kılmaktır.
 
-This is written in Vyper.
+Bu Vyper* ile yazılmıştır.
+*Vyper, Ethereum Sanal Makinesi'ni (EVM) hedefleyen sözleşmeye dayalı, pitonik bir programlama dilidir. (https://vyper.readthedocs.io/en/stable/)
 
-Usage example:
+Kullanım Örneği:
 
-- You send 25 DAI to the Compass-EVM contract, specifying which address on the Paloma chain should recieve the syntehtic DAI.
-- Validators on the Paloma blockchain see that this has happened and mint 25 synthetic DAI for the address you specified on the Paloma chain.
-- You send the 25 synthetic DAI to Jim on the Paloma chain.
-- Jim sends the synthetic DAI to Turnstone module on the Paloma blockchain, specifying which Ethereum address should receive it.
-- The Paloma validators burn the synthetic DAI on the Paloma blockchain and unlock 25 DAI for Jim on Ethereum
+* Paloma zincirinde hangi adresin Syntehtic Dai'yi alması gerektiğini belirterek Compass-EVM sözleşmesine 25 DAI gönderiyorsunuz.
 
-## Security model
+* Paloma Blockchain'deki Doğrulayıcılar, Paloma zincirinde belirttiğiniz adres için 25 sentetik DAI basıldığını ve bunun gerçekleştiğini görüyor.
 
-The Compass-EVM contract is basically a validator-set multisig with a few tweaks. Even though it is designed to be used with a consensus process on Paloma, the Compass-EVM contract itself encodes nothing about this consensus process. There are three main operations- update_valset, submit_logic_call.
-- update_valset updates the signers on the multisig, and their relative powers. This mirrors the validator set on the Paloma blockchain, so that all the Paloma validators are signers, in proportion to their staking power on the Paloma chain. An update_valset transaction must be signed by 2/3's of the current valset to be accepted.
-- submit_logic_call is used to submit a arbitrary transactions to another smart contract. The logic call must be signed by 2/3's of the current valset.
+* 25 sentetik DAI'yi Paloma zincirinde Jim'e gönderiyorsunuz.
+
+* Jim, sentetik Dai'yi Paloma blockchain'deki Turnstone modülüne gönderir ve hangi Ethereum adresinin onu alması gerektiğini belirtir.
+
+* Paloma doğrulayıcıları Paloma Blockchain'deki sentetik DAI'yi yakar ve Ethereum'da Jim için 25 DAI'nin kilidini açar
+
+
+## Güvenlik Modeli
+
+Compass-EVM sözleşmesi temel olarak birkaç ince ayar içeren bir doğrulayıcı (validator) seti çoklu imzasıdır (multisig). Paloma üzerinde bir fikir birliği süreci ile kullanılmak üzere tasarlanmış olsa da, Compass-EVM sözleşmesi bu fikir birliği süreci hakkında hiçbir şey kodlamamaktadır. Burada iki ana işlem vardır;  update_valset, submit_logic_call.
+
+* update_valset, çoklu imza (multisig) ile ilgili imzalayanları ve bunların göreceli güçlerini günceller. Bu, Paloma Blockchain üzerindeki doğrulayıcıyı (validator) yansıtır, böylece tüm Paloma doğrulayıcıları, paloma zincirindeki staking güçleri ile orantılı olarak imzalayıcılardır. Bir Update_Valset işlemi, kabul edilecek geçerli valset'in 2/3'ü tarafından imzalanmalıdır.
+
+* submit_logic_call, başka bir akıllı sözleşmeye isteğe bağlı bir işlem göndermek için kullanılır. Bu mantık çağrısı (logic call) mevcut valet'in 2/3'ü tarafından imzalanmalıdır.
 
 ### update_valset
 
-A valset consists of a list of validator's Ethereum addresses, their voting power, and an id for the entire valset. update_valset takes a new valset, the current valset, and the signatures of the current valset over the new valset.
+Bir valset, Validator'un Ethereum adreslerinin bir listesinden, oy kullanma gücünden ve tüm valset için bir kimlikten (ID) oluşur. update_valset yeni bir valset alır, mevcut valset ve mevcut valset'in yeni valset üzerindeki imzalarını alır. Sonra sağlanan mevcut valset'i kaydedilmiş kontrol noktasına karşı kontrol eder. Bu konu biraz açıklanma gerektirir. Valset'ler 100'den fazla doğrulayıcı içerdiğinden, bunların hepsini her seferinde Ethereum blok zincirinde saklamak oldukça maliyetli olacaktır. Bu nedenle, sadece mevcut valset'in bir karmasını saklıyoruz, ardından arayanın (caller) güncel adresleri, güçleri ve valset_id'yi tedarik etmesine izin verir.
 
-Then, it checks the supplied current valset against the saved checkpoint. This requires some explanation. Because valsets contain over 100 validators, storing these all on the Ethereum blockchain each time would be quite expensive. Because of this, we only store a hash of the current valset, then let the caller supply the actual addresses, powers, and valset_id. We call this hash the checkpoint. This is done with the function make_checkpoint.
+Arayan tarafından sağlanan valset'in doğru olduğundan emin olduğumuzda, yeni valset kimliğinin geçerli valset ID (kimliğinden) daha yüksek olduğunu kontrol ediyoruz. Bu, (kimliklerin) ID'lerin çok düşük olduğu için eski valsetlerin gönderilmemesini sağlar. Not: Yeni Valset'ten kontrol ettiğimiz tek şey kimliktir. Yeni valset'in geri kalanı argümanlarda bu yönteme aktarılır, ancak yalnızca yeni valest'in kontrol noktasını yeniden oluşturur. Eğer biz kimliği (ID) kontrol etmeseydik, doğrudan kontrol noktasını geçmek mümkün olurdu.
 
-Once we are sure that the valset supplied by the caller is the correct one, we check that the new valset id is higher than current valset id. This ensures that old valsets cannot be submitted because their id is too low. Note: the only thing we check from the new valset is the id. The rest of the new valset is passed in the arguments to this method, but it is only used recreate the checkpoint of the new valset. If we didn't check the id, it would be possible to pass in the checkpoint directly.
+Şimdi, make_checkPoint'i tekrar kullanarak gönderilen yeni valset'ten bir kontrol noktası oluşturuyoruz. Daha sonra bir kontrol noktası olarak kullanılmasının yanı sıra, önce mevcut valset'in yeni valset üzerindeki imzasını kontrol etmek için bir özet olarak kullanıyoruz. Bunu yapmak için check_validator_signatures kullanıyoruz.
 
-Now, we make a checkpoint from the submitted new valset, using make_checkpoint again. In addition to be used as a checkpoint later on, we first use it as a digest to check the current valset's signature over the new valset. We use check_validator_signatures to do this.
+check_validator_signatures bir valset, bir dizi imza, bir karma (hash) ve bir güç eşiği alır. Bu, eşiğe kadar eklenen karmayı (hash) imzalayan tüm doğrulayıcıların güçlerini kontrol eder.Biz, yeni valset'in mevcut valset'in en az 2/3'ü tarafından onaylandığını bu şekilde biliyoruz. Biz, aynı uzunlukta olması gereken mevcut valset ve imza dizisi üzerinde yineleme yapıyoruz. Tüm doğrulayıcılar (validator) için öncelikle imzanın sıfırlanıp sfırlanmadığını kontrol ediyoruz. Bu, belirli bir doğrulayıcının imzasını elde etmenin mümkün olmadığın anlamına gelir. Bu durumda, listedeki bir sonraki doğrulayıcıya geçiyoruz. İmzaların sadece 2/3'üne ihtiyacımız olduğu için her doğrulayıcının her seferinde imzalaması gerekli değildir ve onları es geçerek bir sonraki doğrulayıcıya geçmek herhangi bir doğrulayıcının çalışmayı bırakabilmesini durdurur.
 
-check_validator_signatures takes a valset, an array of signatures, a hash, and a power threshold. It checks that the powers of all the validators that have signed the hash add up to the threshold. This is how we know that the new valset has been approved by at least 2/3s of the current valset. We iterate over the current valset and the array of signatures, which should be the same length. For each validator, we first check if the signature is all zeros. This signifies that it was not possible to obtain the signature of a given validator. If this is the case, we just skip to the next validator in the list. Since we only need 2/3s of the signatures, it is not required that every validator sign every time, and skipping them stops any validator from being able to stop working.
+Bir doğrulayıcı için bir imzamız varsa, bunu doğrularız. Eğer orada yanlış bir şey varsa bunu bir hata olarak kaydederiz. Ayrıca bir cumulative_power sayacını doğrulayıcının gücü ile artırıyoruz. Bir kere bu eşiği aştığında döngüden çıkıyoruz ve imzalar doğrulanmış oluyor! Eşik karşılanmadan döngü biterse, bir hata atıyoruz. Eşik karşılandıktan sonra döngüden çıkma şeklimiz nedeniyle, valset azalan güce göre sıralanırsa, genellikle imzaların çoğunluğunu değerlendirmeyi atlayabiliriz. Bu gaz tasarruflarından yararlanmak ve valsetlerin, validatörler tarafından azalan güç sırasına göre üretilmesi için önemlidir. Bu noktada, tüm kontroller tamamlandı ve şimdi valset'i güncelleme zamanı! Bu biraz antiklimaktiktir, çünkü yaptığımız tek şey yeni kontrol noktasını eskisi üzerinde kaydetmektir. Bir olay da yayınlanır (event emitted*).
 
-If we have a signature for a validator, we verify it, throwing an error if there is something wrong. We also increment a cumulative_power counter with the validator's power. Once this is over the threshold, we break out of the loop, and the signatures have been verified! If the loop ends without the threshold being met, we throw an error. Because of the way we break out of the loop once the threshold has been met, if the valset is sorted by descending power, we can usually skip evaluating the majority of signatures. To take advantage of this gas savings, it is important that valsets be produced by the validators in descending order of power.
-
-At this point, all of the checks are complete, and it's time to update the valset! This is a bit anticlimactic, since all we do is save the new checkpoint over the old one. An event is also emitted.
+*Bilgisayardaki her eylem bir olaydır. Eylemlere örnek olarak; bilgisayarın açılması, dosyanın açılması, dosyanın kapatılması, web sayfanın açılması, klavyeden bir tuşa basılması gibi örnekler verilebilir (https://www.yusufsezer.com.tr/node-js-events/).
 
 ### submit_logic_call
 
-This is how the Compass-EVM run the arbitrary transaction to the other smart contract.
+Compass-EVM, diğer akıllı sözleşmeye isteğe bağlı işlemi bu şekilde yürütür.
 
-We start with some of the same checks that are done in update_valset- checking the supplied current valset against the checkpoint.
+Update_valset'te yapılan aynı kontrollerden bazılarıyla başlarız, kontrol noktasına karşı sağlanan mevcut valset'i kontrol ederek. message_id'nin kullanılıp kullanılmadığını da kontrol ediyoruz. Bu, Compass-EVM tarafından ele alınan her ERC20 için bir ID (kimlik) saklar. Bu kimliğin amacı, eski mantık çağrısının (magic call) tekrar gönderilmemesini sağlamaktır. Paloma zincirinde, hiç gönderilmeyen ve kimliği artık gönderilemeyecek kadar düşük olan eski yığınları temizlemek için de kullanılır.
 
-We also check if the message_id is used. This stores an id for each ERC20 handled by Compass-EVM. The purpose of this id is to ensure that old logic call cannot be submitted again. It is also used on the Paloma chain to clean up old batches that were never submitted and whose id is now too low to ever submit.
+Mevcut doğrulayıcının imzalarını, yeni bir valset üzerinden imzalarını kontrol etmek için yukarıda kullanılan aynı yöntemi kullanarak mantık çağrısının (magic call) karma (hash) üzerindeki işaretlerini kontrol ediyoruz.
 
-We check the current validator's signatures over the hash of the logic call, using the same method used above to check their signatures over a new valset.
+Şimdi hazırız. Mantık (logic) sözleşmesine isteğe bağlı işlemi yürütüyoruz.
 
-Now we are ready. We run the arbitrary transaction to the logic contract.
+Yük verileri 1024 byte'tan az olmalıdır.
 
-The payload data should be less than 1024 bytes.
+## Olaylar
 
-## Events
-
-We emit 2 different events, each of which has a distinct purpose. One contains a field called message_id, which is used by the Paloma chain to ensure that the events are not out of order. This should updated each time one of the events is emitted.
-The other one emits valset_id and checkpoint when valset_id is updated.
+Her biri farklı bir amacı olan 2 farklı olay yayıyoruz. Biri, Paloma zinciri tarafından olayların düzensiz olmamasını sağlamak için kullanılan message_id adlı bir alan içerir. Bu, olaylardan biri her yayıldığında güncellenmelidir. Diğeri valset_id güncellendiğinde valset_id ve kontrol noktası yayar.
 
 ### LogicCallEvent
 
-This contains information about a logic_call transaction that has been successfully processed. It contains the message_id and the logic_contract address, and payload data. The Paloma chain can identify the transaction from this information.
+Bu, başarıyla işlenmiş bir logic_call işlemi hakkında bilgi içerir. message_id ve logic_contract adresini ve yük verilerini içerir. Paloma zinciri, bu bilgilerden işlemi tanımlayabilir.
 
 ### ValsetUpdated
 
-This is emitted whenever the valset is updated. It does not contain the _eventNonce, since it is never brought into the Paloma state. It is used by relayers when they call submit_logic_call or update_valset, so that they can include the correct validator signatures with the transaction.
+Bu, valset her güncellendiğinde yayılır. Hiçbir zaman Paloma durumuna getirilmediği için _eventNonce öğesini içermez. Aktarıcılar tarafından send_logic_call veya update_valset'i çağırdıklarında kullanılır, böylece işleme doğru doğrulayıcı imzalarını dahil edebilirler.
