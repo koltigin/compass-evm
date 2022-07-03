@@ -1,6 +1,6 @@
 # Compass-EVM
 
-Bu akıllı sözleşme, keyfi işlem verileriyle başka bir akıllı sözleşmenin yürütülmesini mümkün kılmaktır.
+Bu akıllı sözleşme, isteğe bağlı işlem verileriyle başka bir akıllı sözleşmenin yürütülmesini mümkün kılmaktır.
 
 Bu Vyper* ile yazılmıştır.
 *Vyper, Ethereum Sanal Makinesi'ni (EVM) hedefleyen sözleşmeye dayalı, pitonik bir programlama dilidir. (https://vyper.readthedocs.io/en/stable/)
